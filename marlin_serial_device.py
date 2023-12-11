@@ -62,6 +62,7 @@ class Device:
                 message = (await self._serial.readline_async()).decode().strip()
                 if message:
                     logger.debug(f'SKR Reading: "{message}"')
+                    print(f'SKR Reading: "{message}"')
                     if message.startswith("ok") and self._pending_commands > 0:
                         self._pending_commands -= 1
             except:

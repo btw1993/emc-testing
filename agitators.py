@@ -48,6 +48,7 @@ class Agitator:
                 message = (await self._serial.readline_async()).decode().strip()
                 if message:
                     logger.debug(f'Agitator Reading: "{message}"')
+                    print(f'Agitator Reading: "{message}"')
             except:
                 pass
             await sleep(0.1)
@@ -79,6 +80,22 @@ class Agitator:
     async def stop(self):
         cmd = {
             "controller": "AGITATOR",
+            "index": 0,
+            "value": 0
+        }
+        self.send(json.dumps(cmd))
+
+    async def start_heating(self, temp: int = 35):
+        cmd = {
+            "controller": "TEMPERATURE",
+            "index": 0,
+            "value": temp
+        }
+        self.send(json.dumps(cmd))
+
+    async def stop_heating(self):
+        cmd = {
+            "controller": "TEMPERATURE",
             "index": 0,
             "value": 0
         }
@@ -133,6 +150,14 @@ class Agitators:
     async def stop(self, rpm: int = 1000):
         for agitator in self.agitators:
             await agitator.stop()
+
+    async def start_heating(self, rpm: int = 1000):
+        for agitator in self.agitators:
+            await agitator.start_heating(rpm)
+
+    async def stop_heating(self, rpm: int = 1000):
+        for agitator in self.agitators:
+            await agitator.stop_heating()
 
     async def close(self):
         closing: list[Task[None]] = []

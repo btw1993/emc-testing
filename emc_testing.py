@@ -9,19 +9,21 @@ logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.DEBUG)
 
 async def main():
     await connect_all()
-    await enter_emmisions_testing_mode()
+    # await enter_emmisions_testing_mode()
+    while True:
+        print(await picos.check_connections())
     await disconnect_all()
 
 
 async def connect_all():
-    await skr.connect()
-    await agitators.connect()
+    # await skr.connect()
+    # await agitators.connect()
     await picos.connect()
 
 
 async def disconnect_all():
-    await skr.disconnect()
-    await agitators.close()
+    # await skr.disconnect()
+    # await agitators.close()
     await picos.close()
 
 

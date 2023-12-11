@@ -60,6 +60,9 @@ class Pico:
         self._listener_task = create_task(self._listen())
         self._writer_task = create_task(self._send_commands())
 
+        cmds = self._get_calibration_template()
+        await self.run(cmds)
+
     async def _listen(self):
         # Keep reading until either the serial port closes or we've finished sending commands and the input buffer is empty
         while self._should_keep_open():
@@ -123,13 +126,13 @@ class Pico:
             return raw_value
 
     async def check_connection(self):
-        cmds = self._get_calibration_template()
-        await self.run(cmds)
+        # cmds = self._get_calibration_template()
+        # await self.run(cmds)
         self._check_connection_responses = []
         self._checking_connection = True
         self._check_start_time = time.time()
         await sleep(3)
-        self.send("Z")
+        # self.send("Z")
         self._checking_connection = False
 
         if (len(self._check_connection_responses) > 0):
