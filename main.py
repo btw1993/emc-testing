@@ -1,4 +1,4 @@
-from asyncio import run, create_task, StreamReader, get_event_loop, StreamReaderProtocol
+from asyncio import run, create_task, StreamReader, get_event_loop, StreamReaderProtocol, sleep
 from random import randrange
 import sys
 import logging
@@ -6,15 +6,42 @@ from skr_mini import SKR_MINI
 from pico import Picos
 
 logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.DEBUG)
-# logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+
+# To calibrate the SKR's position set the x, y & z position of the "sensor_1_pickup_position" on line 10 of the file skr_mini.py
+
+
+async def main():
+    # To stop the script running hit enter
+    create_task(cancel_on_enter_keypress())
+
+    # Connects to the motion control board
+    await skr.connect()
+
+    # Move the head to the X & Y location of a sensor (plate, column, row)
+    # await skr.move_to(1, 0, 0, True)
+
+    # Move to, grab and raise a sensor from the rack
+    # await skr.collect_sensor(1, 0, 0)
+
+    # Return a sensor to the rack
+    # await skr.dropoff_sensor(1, 1, 0)
+
+    # Open the head's jaws
+    # await skr.open_jaw()
+
+    # move sensors about randomly
+    # Make sure to set the starting "positions" below (Line 43)
+    # await move_sensors_randomly()
+
+    # print(await picos.check_connections())
+
+    await skr.disconnect()
+    # await picos.close()
 
 # init 2x3x12 array to represent the positions a sensor can be in the well plate
 positions = [[[False]*12 for _i in range(3)], [[False]*12 for _i in range(3)]]
 
 positions[1][0][0] = True
-positions[1][0][1] = True
-positions[1][0][2] = True
-# positions[1][0][2] = True
 
 
 def pick_random_position():
@@ -77,35 +104,6 @@ async def move_sensors_randomly():
         positions[plate2][col2][row2] = True
 
         # await skr.home_jaw()
-
-
-async def main():
-    create_task(cancel_on_enter_keypress())
-
-    await skr.connect()
-    # await picos.connect()
-    # await skr.upload_circular_move_file()
-    # await skr.run_circular_move()
-    await skr.run_home_move_loop()
-
-    # await skr.home()
-    # await skr.home_head()
-    # await skr.home_jaw()
-
-    # await skr.move_to(1, 0, 0, True)
-    # await skr.grab_sensor(0, 0, 0)
-    # await skr.dropoff_sensor(1, 0, 0)
-    # await skr.collect_sensor(1, 0, 0)
-    # await skr.dropoff_sensor(1, 0, 0)
-
-    # await skr._open_jaw()
-
-    # await move_sensors_randomly()
-
-    # print(await picos.check_connections())
-
-    await skr.disconnect()
-    # await picos.close()
 
 close = False
 skr = SKR_MINI()

@@ -7,12 +7,11 @@ class SKR_MINI:
     # row_spacing = 9
     row_spacing = 18
     plate_spacing = 105.5
-    sensor_1_pickup_position = {"x": 107.5, "y": 22.6, "z": 22.8}
-    # sensor_1_pickup_position = {"x": 105.5, "y": 20, "z": 14}
+    sensor_1_pickup_position = {"x": 106.5, "y": 20, "z": 23}
     sensor_1_location = {"plate": 1, "column": 0, "row": 0}
     xy_move_speed = 7000
-    z_move_speed = 900
-    clearance_height = -2
+    z_move_speed = 500
+    clearance_height = 0
     opening_distance = 5.5
     opening_offset = 2.2
     current_position = [0, 0, 0, 0]
