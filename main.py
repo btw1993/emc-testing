@@ -17,21 +17,23 @@ async def main():
     # Connects to the motion control board
     await skr.connect()
 
+    await skr.home()
+
     # Move the head to the X & Y location of a sensor (plate, column, row)
-    # await skr.move_to(1, 0, 0, True)
+    # await skr.move_to(0, 0, 0, True)
 
     # Move to, grab and raise a sensor from the rack
-    # await skr.collect_sensor(1, 0, 0)
+    # await skr.collect_sensor(0, 0, 0)
 
     # Return a sensor to the rack
-    # await skr.dropoff_sensor(1, 1, 0)
+    # await skr.dropoff_sensor(0, 0, 0)
 
     # Open the head's jaws
     # await skr.open_jaw()
 
     # move sensors about randomly
     # Make sure to set the starting "positions" below (Line 43)
-    # await move_sensors_randomly()
+    await move_sensors_randomly()
 
     # print(await picos.check_connections())
 
@@ -41,11 +43,11 @@ async def main():
 # init 2x3x12 array to represent the positions a sensor can be in the well plate
 positions = [[[False]*12 for _i in range(3)], [[False]*12 for _i in range(3)]]
 
-positions[1][0][0] = True
+positions[0][0][0] = True
 
 
 def pick_random_position():
-    plate = randrange(1) + 1
+    plate = randrange(1)
     col = randrange(2)
     # row = randrange(12)
     row = randrange(6)

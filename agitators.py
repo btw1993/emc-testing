@@ -1,4 +1,5 @@
 from aioserial import AioSerial
+import asyncio
 import logging
 from asyncio import Task, sleep, TaskGroup, create_task, run
 import serial.tools.list_ports as list_ports
@@ -85,7 +86,7 @@ class Agitator:
         }
         self.send(json.dumps(cmd))
 
-    async def start_heating(self, temp: int = 35):
+    async def start_heating(self, temp: int = 28):
         cmd = {
             "controller": "TEMPERATURE",
             "index": 0,
@@ -125,6 +126,7 @@ class Agitators:
     agitators: list[Agitator]
     _num_agitators = 2
     _agitator_vid = "4292"
+    _cycle = None
 
     async def connect(self):
         available_ports = list(list_ports.comports())
@@ -151,13 +153,22 @@ class Agitators:
         for agitator in self.agitators:
             await agitator.stop()
 
-    async def start_heating(self, rpm: int = 1000):
+    async def start_heating(self, temp: int = 28):
         for agitator in self.agitators:
-            await agitator.start_heating(rpm)
+            await agitator.start_heating(temp)
 
-    async def stop_heating(self, rpm: int = 1000):
+    async def stop_heating(self):
         for agitator in self.agitators:
             await agitator.stop_heating()
+
+    async def heating_cooling_cycle(self):
+        while (True):
+            await self.start_heating(28)
+            await asyncio.sleep(20)
+            await self.start_heating(20)
+
+    async def start_heating_cooling_cycle(self):
+        self._cycle = create_task(self.heating_cooling_cycle())
 
     async def close(self):
         closing: list[Task[None]] = []
