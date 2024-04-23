@@ -1,8 +1,10 @@
+# %%
 from asyncio import run, create_task, StreamReader, get_event_loop, StreamReaderProtocol, sleep
 from random import randrange
 import sys
 import logging
 from skr_mini import SKR_MINI
+from agitators import Agitators
 from pico import Picos
 
 logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.DEBUG)
@@ -33,7 +35,7 @@ async def main():
 
     # move sensors about randomly
     # Make sure to set the starting "positions" below (Line 43)
-    await move_sensors_randomly()
+    #await move_sensors_randomly()
 
     # print(await picos.check_connections())
 
@@ -108,6 +110,69 @@ async def move_sensors_randomly():
         # await skr.home_jaw()
 
 close = False
+
+# %%
 skr = SKR_MINI()
+print(skr.sensor_1_pickup_position)
+# %%
 picos = Picos()
-run(main())
+agitators = Agitators()
+#run(main())
+
+# %%
+await skr.connect()
+
+# %%
+await agitators.connect()
+# %%
+await skr.home()
+
+#%% for calibration change first position, but afterwards push this into skr_mini
+skr.sensor_1_pickup_position = {"x": -1.2, "y": 2, "z": 20}
+skr.opening_offset = -2.5
+
+# %% Move the head to the X & Y location of a sensor (plate, column, row)
+
+await skr.move_to_safe(0, 0, 0, True)
+
+#%%
+await skr.move_to_safe(1, 1, 0, True)
+await skr.open_jaw()
+await skr._descend()
+
+# %%
+await agitators.start()
+
+#%%
+await agitators.stop()
+
+# %% Move to, grab and raise a sensor from the rack
+await skr.collect_sensor(1, 0, 11)
+await skr.move_to_safe(0, 0, 0, True)
+# %% Return a sensor to the rack
+await skr.dropoff_sensor(1, 1, 7)
+await skr.collect_sensor(1, 1, 7)
+await skr.move_to_safe(0, 0, 0, True)
+
+# %%
+await skr.dropoff_sensor(1, 0, 0)
+await skr.move_to_safe(0, 0, 0, True)
+
+# %%
+await skr.open_jaw()
+
+    # move sensors about randomly
+    # Make sure to set the starting "positions" below (Line 43)
+    #await move_sensors_randomly()
+
+    # print(await picos.check_connections())
+
+# %%
+await skr.disconnect()
+
+# %%
+await agitators.close()
+
+
+
+# %%

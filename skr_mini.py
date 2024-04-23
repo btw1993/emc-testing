@@ -4,16 +4,16 @@ from marlin_serial_device import Device
 class SKR_MINI:
     _device: Device
     column_spacing = 9*4
-    # row_spacing = 9
-    row_spacing = 18
+    row_spacing = 9
+    #row_spacing = 18
     plate_spacing = 105.5
-    sensor_1_pickup_position = {"x": 0.5, "y": 25.8, "z": 23.4}
+    sensor_1_pickup_position = {"x": -1.2, "y": 2, "z": 20}
     sensor_1_location = {"plate": 0, "column": 0, "row": 0}
     xy_move_speed = 7000
     z_move_speed = 500
     clearance_height = 0
-    opening_distance = 5.5
-    opening_offset = 2.2
+    opening_distance = 5.0 #5.5 gamma3, 5 gamma4
+    opening_offset = -2.5   #2.2 gamma3, -2.5 gamma4 reversed jaws
     current_position = [0, 0, 0, 0]
 
     calibrate = False
@@ -42,6 +42,11 @@ class SKR_MINI:
         # TODO check if device is connected
         # if self._device.
         await self._device.run(cmds)
+        return x, y
+    
+    async def move_to_safe(self, plate: int, column: int, row: int, offset: bool = True):
+        await self._ascend()
+        x, y = await self.move_to(plate, column, row, offset)
         return x, y
 
     async def open_jaw(self):
@@ -77,14 +82,14 @@ class SKR_MINI:
         await self._grab_sensor(y)
 
     async def collect_sensor(self, plate: int, column: int, row: int):
-        _x, y = await self.move_to(plate, column, row, True)
+        _x, y = await self.move_to_safe(plate, column, row, True)
         await self.open_jaw()
         await self._descend()
         await self._grab_sensor(y)
         await self._ascend()
 
     async def dropoff_sensor(self, plate: int, column: int, row: int):
-        _x, y = await self.move_to(plate, column, row, False)
+        _x, y = await self.move_to_safe(plate, column, row, False)
         await self._descend()
         await self._release_sensor(y)
         await self._ascend()
