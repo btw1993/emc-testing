@@ -6,6 +6,7 @@ import logging
 from skr_mini import SKR_MINI
 from agitators import Agitators
 from pico import Picos
+import time
 
 logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.DEBUG)
 
@@ -113,14 +114,15 @@ close = False
 
 # %%
 skr = SKR_MINI()
-print(skr.sensor_1_pickup_position)
-# %%
 picos = Picos()
 agitators = Agitators()
+p = {'left':0, 'right':1}
+c = {'left':0, 'right':1} #left A-D, and right E-H
 #run(main())
 
 # %%
 await skr.connect()
+
 
 # %%
 await agitators.connect()
@@ -129,11 +131,40 @@ await skr.home()
 
 #%% for calibration change first position, but afterwards push this into skr_mini
 skr.sensor_1_pickup_position = {"x": -1.2, "y": 2, "z": 20}
+active_plate = p['right']
 skr.opening_offset = -2.5
 
 # %% Move the head to the X & Y location of a sensor (plate, column, row)
 
-await skr.move_to_safe(0, 0, 0, True)
+await skr.move_to_safe(active_plate, 0, 0, True)
+
+#%%
+pos_index = 15 -1
+holes = 2
+
+#%% pokey pokey
+await skr.home()
+await skr.collect_sensor(active_plate, c['left'], 0)
+
+for hole in range(holes):
+    x, y = await skr.move_to_safe(active_plate, pos_index % 2, (pos_index/2)//1, False) #front left plate 0 or 1, zigzag pattern
+    print(x, y)
+    await skr._descend(z_offset=5) #offset above rack
+    time.sleep(1) # let hole be cut
+    square = [1,0,-1,0,1,0,-1,0]
+    for shape in range(4):
+        width = 1
+        cmds = [f'G1 X{x+square[shape]} Y{y+square[shape+1]} F{skr.xy_move_speed}']
+        await skr._device.run(cmds)
+        time.sleep(1) # let hole be cut
+    await skr._ascend()
+    pos_index += 1 # go to next position
+
+await skr.dropoff_sensor(active_plate, c['left'], 0)
+await skr.move_to_safe((active_plate+1)%2, 0, 0) #move to non active plate
+
+# %% hold sensor in hole
+
 
 #%%
 await skr.move_to_safe(1, 1, 0, True)
@@ -174,5 +205,8 @@ await skr.disconnect()
 await agitators.close()
 
 
+
+# %%
+pos = await skr.get_pos()
 
 # %%

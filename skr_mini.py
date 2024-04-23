@@ -55,8 +55,9 @@ class SKR_MINI:
     async def _release_sensor(self, y: float):
         await self._device.run([f'G1 A{self.opening_distance} Y{y + self.opening_offset}'])
 
-    async def _descend(self):
-        await self._device.run([f'G1 Z{self.sensor_1_pickup_position["z"]} F{self.z_move_speed}'])
+    async def _descend(self, z_offset:float = 0):
+        z = self.sensor_1_pickup_position["z"]-z_offset
+        await self._device.run([f'G1 Z{z} F{self.z_move_speed}'])
 
     async def close_jaw(self):
         await self._device.run([f'G1 A0'])
@@ -73,7 +74,7 @@ class SKR_MINI:
     async def _ascend(self):
         await self._device.run([f"G1 Z{self.clearance_height} F{self.z_move_speed}"])
 
-    async def _wait(self):
+    async def _wait(self): #for all G-code in buffer to be completed
         await self._device.run(["M400"])
 
     async def grab_sensor(self, plate: int, column: int, row: int):
@@ -128,3 +129,10 @@ class SKR_MINI:
 
     async def disconnect(self):
         await self._device.close()
+
+    async def get_pos(self):
+        pos = []
+        pos = pos + await self._device.run(['M114'])
+        print(pos)
+        return pos
+
