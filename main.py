@@ -126,23 +126,30 @@ await skr.connect()
 
 # %%
 await agitators.connect()
+
 # %%
 await skr.home()
+
+# %% Move the head to the X & Y location of a sensor (plate, column, row)
+
+await skr.move_to_safe(0, 0, 0, True)
+
+# %%
+await agitators.start()
+
+#%%
+await agitators.stop()
 
 #%% for calibration change first position, but afterwards push this into skr_mini
 skr.sensor_1_pickup_position = {"x": -1.2, "y": 2, "z": 20}
 active_plate = p['right']
 skr.opening_offset = -2.5
 
-# %% Move the head to the X & Y location of a sensor (plate, column, row)
-
-await skr.move_to_safe(active_plate, 0, 0, True)
-
 #%%
 pos_index = 15 -1
-holes = 2
+holes = 2 #left and right
 
-#%% pokey pokey
+#%% pokey pokey, can move to definition once tested
 await skr.home()
 await skr.collect_sensor(active_plate, c['left'], 0)
 
@@ -151,13 +158,15 @@ for hole in range(holes):
     print(x, y)
     await skr._descend(z_offset=5) #offset above rack
     time.sleep(1) # let hole be cut
-    square = [1,0,-1,0,1,0,-1,0]
-    for shape in range(4):
-        width = 1
-        cmds = [f'G1 X{x+square[shape]} Y{y+square[shape+1]} F{skr.xy_move_speed}']
+    shape = [1,1,-1,-1] #x coord is index and y coord is +1 on index, so length of list is number of positions
+    width = 3 #width of shape in mm modifies shape to real units
+    for pos in range(len(shape)):
+        x_coord = x + shape[pos%len(shape)]*width/2 #mod cycles through shape so that don't run off index
+        y_coord = y + shape[(pos+1)%len(shape)]*width/2 #mod cycles through shape so that don't run off index
+        cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
         await skr._device.run(cmds)
-        time.sleep(1) # let hole be cut
-    await skr._ascend()
+        time.sleep(1) # let agitation to open hole
+    await skr._ascend() # to avoid crashing when moving
     pos_index += 1 # go to next position
 
 await skr.dropoff_sensor(active_plate, c['left'], 0)
@@ -170,12 +179,6 @@ await skr.move_to_safe((active_plate+1)%2, 0, 0) #move to non active plate
 await skr.move_to_safe(1, 1, 0, True)
 await skr.open_jaw()
 await skr._descend()
-
-# %%
-await agitators.start()
-
-#%%
-await agitators.stop()
 
 # %% Move to, grab and raise a sensor from the rack
 await skr.collect_sensor(1, 0, 11)
