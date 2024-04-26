@@ -141,14 +141,16 @@ await agitators.start()
 await agitators.stop()
 
 #%% for calibration change first position, but afterwards push this into skr_mini
-skr.sensor_1_pickup_position = {"x": -1.8, "y": 1.5, "z": 20}
+skr.sensor_1_pickup_position = {"x": -1.8, "y": 1.2, "z": 20}
 active_plate = p['right']
-skr.opening_offset = -2.5
+skr.opening_offset = -2.5-0.625
 
 #%%
-pos_index = 2 -1
-holes = 1 #left and right
-z_hieght_piercing = 4.5 #distance above rack
+pos_index = 13 -1
+
+#%%
+holes = 6 #left and right
+z_hieght_piercing = 3.5 #distance above rack
 
 #%% pokey pokey, can move to definition once tested
 await skr.home()
@@ -158,20 +160,27 @@ for hole in range(holes):
     x, y = await skr.move_to_safe(active_plate, pos_index % 2, (pos_index/2)//1, False) #front left plate 0 or 1, zigzag pattern
     print(x, y)
     old_z_speed = skr.z_move_speed
-    skr.z_move_speed = 100
+    skr.z_move_speed = 500
     await skr._descend(z_offset=z_hieght_piercing) #offset above rack
+    x_coord = x- 1 #push flap
+    y_coord = y
+    cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
+    await skr._device.run(cmds)
+    await skr.move_to(active_plate, pos_index % 2, (pos_index/2)//1, False)
     skr.z_move_speed = old_z_speed
-    time.sleep(1) # let hole be cut
-    
-    '''    shape = [1,1,-1,-1] #x coord is index and y coord is +1 on index, so length of list is number of positions
-    width = 3 #width of shape in mm modifies shape to real units
-    for pos in range(len(shape)):
-        x_coord = x + shape[pos%len(shape)]*width/2 #mod cycles through shape so that don't run off index
-        y_coord = y + shape[(pos+1)%len(shape)]*width/2 #mod cycles through shape so that don't run off index
-        cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
-        await skr._device.run(cmds)
-        time.sleep(1) # let agitation to open hole'''
-    
+    #time.sleep(1) # let hole be cut
+    if False:
+        shape = [1,0,-1,0] #x coord is index and y coord is +1 on index, so length of list is number of positions
+        width = 1 #width of shape in mm modifies shape to real units
+        for pos in range(len(shape)*2):
+            x_coord = x + shape[pos%len(shape)]*width/2 #mod cycles through shape so that don't run off index
+            y_coord = y + shape[(pos+1)%len(shape)]*width/2 #mod cycles through shape so that don't run off index
+            cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
+            await skr._device.run(cmds)
+            #time.sleep(1) # let agitation to open hole
+
+        await skr.move_to_safe(active_plate, pos_index % 2, (pos_index/2)//1, False) #return to centre before ascent
+
     await skr._ascend() # to avoid crashing when moving
     pos_index += 1 # go to next position
 
@@ -179,7 +188,8 @@ await skr.dropoff_sensor(active_plate, c['left'], 0)
 await skr.move_to_safe((active_plate+1)%2, 0, 11) #move to non active plate back left
 
 # %% hold sensor in hole
-
+skr.sensor_1_pickup_position = {"x": -2, "y": 1.5, "z": 20}
+await skr.move_to_safe(1, 1, 0, False)
 
 #%%
 await skr.move_to_safe(1, 1, 0, True)
