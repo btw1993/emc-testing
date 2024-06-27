@@ -123,6 +123,12 @@ c = {'left':0, 'right':1} #left A-D, and right E-H
 # %%
 await skr.connect()
 
+#%%
+await skr.home_jaw()
+
+await skr.open_jaw()
+
+await skr.close_jaw()
 
 # %%
 await agitators.connect()
@@ -136,6 +142,8 @@ await skr.move_to_safe(0, 0, 0, True)
 
 # %%
 await agitators.start()
+#%%
+await agitators.stop_heating()
 
 #%%
 await agitators.stop()

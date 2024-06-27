@@ -5,6 +5,7 @@ from asyncio import Task, sleep, TaskGroup, create_task, run
 import serial.tools.list_ports as list_ports
 from InquirerPy import inquirer as inquirer
 import json
+from datetime import datetime 
 
 logger = logging.getLogger()
 
@@ -44,12 +45,14 @@ class Agitator:
 
     async def _listen(self):
         # Keep reading until either the serial port closes or we've finished sending commands and the input buffer is empty
+        Agitator_pos = ['Left', 'Right']
         while self._should_keep_open():
             try:
                 message = (await self._serial.readline_async()).decode().strip()
                 if message:
-                    logger.debug(f'Agitator Reading: "{message}"')
-                    print(f'Agitator Reading: "{message}"')
+                    
+                    logger.debug(f'time: {datetime.now()}, {Agitator_pos[self.agitator_index]} Agitator: "{message}"')
+                    print(f'time: {datetime.now()}, {Agitator_pos[self.agitator_index]} Agitator: "{message}"')
             except:
                 pass
             await sleep(0.1)
@@ -93,6 +96,14 @@ class Agitator:
             "value": temp
         }
         self.send(json.dumps(cmd))
+
+    async def start_debugging(self):
+        cmd = {
+            "controller": "ENABLE_DEBUG",
+            "index": 0,
+            "value": 1
+        }
+        self.send(json.dumps(cmd))        
 
     async def stop_heating(self):
         cmd = {
@@ -144,6 +155,10 @@ class Agitators:
         self.agitators = [Agitator(port, i) for i, port in enumerate(ports)]
         for agitator in self.agitators:
             await agitator.connect()
+
+    async def start_debugging(self):
+        for agitator in self.agitators:
+            await agitator.start_debugging()
 
     async def start(self, rpm: int = 1000):
         for agitator in self.agitators:
