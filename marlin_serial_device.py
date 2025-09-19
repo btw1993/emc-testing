@@ -20,6 +20,7 @@ class Device:
     _buffer_size: int
     _timeout: float
     _baudrate: int
+    logs_list = []
 
     def __init__(self, pid: str = "0483", baudrate: int = 115200, timeout: float = 0.5):
         self._buffer_size = 1
@@ -62,6 +63,7 @@ class Device:
                 message = (await self._serial.readline_async()).decode().strip()
                 if message:
                     logger.debug(f'SKR Reading: "{message}"')
+                    self.logs_list.append(message)
                     print(f'SKR Reading: "{message}"')
                     if message.startswith("ok") and self._pending_commands > 0:
                         self._pending_commands -= 1

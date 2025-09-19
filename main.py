@@ -7,6 +7,7 @@ from skr_mini import SKR_MINI
 from agitators import Agitators
 from pico import Picos
 import time
+import re
 
 logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.DEBUG)
 
@@ -120,21 +121,199 @@ p = {'left':0, 'right':1}
 c = {'left':0, 'right':1} #left A-D, and right E-H
 #run(main())
 
+#%%
+#calibration delta002
+left_a1 = [3.3,31.2,22.6]
+left_e1 = [39.3,31.2,22.6]
+left_a12 = [3.3,130.2,22.6]
+right_a1 = [107.5,31.3,22.6]
+right_e1 = [143.7,31.3,22.6]
+right_a12 = [107.1, 130.1, 22.6]
+
+#%%
+skr.sensor_1_pickup_position = {"x": left_a1[0], "y": left_a1[1], "z": left_a1[2]}
+
 # %%
 await skr.connect()
+# %%
+await skr.home()
+
+#%%
+await skr.open_jaw()
 
 #%%
 await skr.home_jaw()
 
-await skr.open_jaw()
-
+#%%
 await skr.close_jaw()
+
+#%%
+distance_above_plate = 12
+await skr._descend(distance_above_plate)
+
+#%%
+def set_speed(xy, z):
+    skr.xy_move_speed = xy
+    skr.z_move_speed = z
+    
+async def up():
+    await skr._ascend()
+
+async def down(distance_above_plate = 6.5):
+    await skr._descend(distance_above_plate)
+
+async def access_left():
+    await skr.move_to_safe(1, 0, 0, True)
+
+async def access_right():
+    await skr.move_to_safe(0, 0, 0, True)
+
+#%%
+await up()
+await access_left()
+
+#%%
+set_speed(10000,1000)
+
+#%%
+await skr.check_endstops()
+await skr.check_currents()
+
+#%%
+
+
+#%%
+await skr.check_acceleration()
+
+#%%
+#stall parameters
+set_speed(10000,1000)
+await skr.set_acceleration_z(1000)
+await skr.set_maxfeed(100000,10000)
+
+
+#%%
+await down()
+await up()
+
+#%%
+
+async def get_axis_status(endstops=True, currents=True):
+    """
+    Returns a dict with axis currents and endstop status.
+    Keys: 'X_current', 'Y_current', ..., 'X_end_stop', ...
+    Values: float for current, bool for endstop triggered.
+    """
+    status = {}
+    if endstops: await skr.check_endstops()
+    if currents: await skr.check_currents()
+    logs=skr.get_new_logs_since_last()
+
+    # Endstop lines: e.g. 'x_min: TRIGGERED'
+    endstop_pattern = re.compile(r'([xyza])_(min|max):\s*(TRIGGERED|open)', re.IGNORECASE)
+    # Current lines: e.g. 'X driver current: 1500'
+    current_pattern = re.compile(r'([XYZA]|I)\s*driver current:\s*([\d.]+)', re.IGNORECASE)
+
+    for line in logs:
+        # Endstop status
+        match = endstop_pattern.match(line)
+        if match:
+            axis = match.group(1).upper()
+            triggered = match.group(3).lower() == "triggered"
+            status[f"{axis}_end_stop"] = triggered
+            continue
+        # Currents
+        match = current_pattern.match(line)
+        if match:
+            axis = match.group(1).upper()
+            value = float(match.group(2))
+            status[f"{axis}_current"] = value
+            continue
+
+    return status
+
+
+print(await get_axis_status())
+
+#%%
+async def find_endstop_position(axis: str, step_coarse: float, step_fine: float, backoff: float = 2.0):
+    """
+    Moves up in mm along the given axis until end stop is triggered,
+    backs off by 'backoff', then moves up in fine steps until triggered.
+    Returns total distance moved until end stop.
+    axis: 'X', 'Y', 'Z', or 'A'
+    step_coarse: coarse step size in mm
+    step_fine: fine step size in mm
+    backoff: distance to back off after coarse trigger (default 2.0 mm)
+    """
+    start_pos = await skr.get_pos()
+    pos = start_pos[axis]
+    print(pos)
+    await skr._device.run(["M211 S0"])
+    # Coarse approach
+    while True:
+        i +=1
+        await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
+        pos -= step_coarse
+        await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
+        status = await get_axis_status()
+        if status.get(f"{axis}_end_stop", False):
+            break
+        if i > 20:  # Safety to prevent infinite loop
+            print("End stop not triggered within expected range.")
+            break
+
+    # Back off
+    pos += backoff
+    await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
+
+    # Fine approach
+    while True:
+        await skr._device.run([f'G1 {axis}{pos + step_fine} F{skr.z_move_speed}'])
+        i+=1
+        pos -= step_fine
+        await skr.check_endstops()
+        status = await get_axis_status()
+        if status.get(f"{axis}_end_stop", False):
+            break
+        if i > backoff/step_fine+1:  # Safety to prevent infinite loop
+            print("End stop not triggered within backoff range.")
+            break
+
+    return pos
+
+#%%
+distance = await find_endstop_position('Z', 2.0, 0.1)
+print(f"Distance until end stop: {distance} mm")
+
+#%%
+await skr.get_pos()
+
+#%%
+await skr.set_current_z(250)
+
+#%%
+await skr.move_to_safe(0, 0, 1, False) #jaws closed
+
+#%%
+await skr.move_to_rel(0,0,0,[3,-10,0])
+
+#%% 
+await down(15)
+#%%
+await skr.set_current_z(153) #152 stalled, 153 hit.
+await down(8)
+await skr.set_current_z(500)
+#%%
+await up()
+await skr.home_head()
 
 # %%
 await agitators.connect()
 
+
 # %%
-await skr.home()
+await skr.homezxy()
 
 # %% Move the head to the X & Y location of a sensor (plate, column, row)
 
@@ -149,9 +328,9 @@ await agitators.stop_heating()
 await agitators.stop()
 
 #%% for calibration change first position, but afterwards push this into skr_mini
-skr.sensor_1_pickup_position = {"x": -1.8, "y": 1.2, "z": 20}
-active_plate = p['right']
-skr.opening_offset = -2.5-0.625
+skr.sensor_1_pickup_position = {"x": left_a1[0], "y": left_a1[1], "z": left_a1[2]}
+active_plate = p['left']
+#skr.opening_offset = -2.5-0.625
 
 #%%
 pos_index = 13 -1

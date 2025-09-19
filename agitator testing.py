@@ -12,7 +12,7 @@ import time
 agitators = Agitators()
 
 #%%
-agitators._num_agitators=2
+agitators._num_agitators=1
 
 #%%
 await agitators.connect()
@@ -20,9 +20,15 @@ await agitators.connect()
 # %%
 await agitators.start_debugging()
 # %%
-await agitators.start_heating(20)
+await agitators.start_heating(15)
 # %%
 await agitators.agitators[1].start(1000)
 # %%
 await agitators.stop_heating()
 # %%
+await agitators.start(1000)
+# %%
+await agitators.stop()
+
+```````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````# %%
+await agitators.s
