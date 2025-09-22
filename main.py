@@ -91,6 +91,119 @@ async def cancel_on_enter_keypress():
         close = True
         await skr.disconnect()
 
+async def get_axis_status(endstops=True, currents=True):
+    """
+    Returns a dict with axis currents and endstop status.
+    Keys: 'X_current', 'Y_current', ..., 'X_end_stop', ...
+    Values: float for current, bool for endstop triggered.
+    """
+    status = {}
+    if endstops: await skr.check_endstops()
+    if currents: await skr.check_currents()
+    logs=skr.get_new_logs_since_last()
+
+    # Endstop lines: e.g. 'x_min: TRIGGERED'
+    endstop_pattern = re.compile(r'([xyza])_(min|max):\s*(TRIGGERED|open)', re.IGNORECASE)
+    # Current lines: e.g. 'X driver current: 1500'
+    current_pattern = re.compile(r'([XYZA]|I)\s*driver current:\s*([\d.]+)', re.IGNORECASE)
+
+    for line in logs:
+        # Endstop status
+        match = endstop_pattern.match(line)
+        if match:
+            axis = match.group(1).upper()
+            triggered = match.group(3).lower() == "triggered"
+            status[f"{axis}_end_stop"] = triggered
+            continue
+        # Currents
+        match = current_pattern.match(line)
+        if match:
+            axis = match.group(1).upper()
+            value = float(match.group(2))
+            status[f"{axis}_current"] = value
+            continue
+
+    return status
+
+
+async def find_endstop_position(axis: str, current:int, step_coarse: float, step_fine: float):
+    """
+    Moves up in mm along the given axis until end stop is triggered,
+    backs off by 'backoff', then moves up in fine steps until triggered.
+    Returns total distance moved until end stop.
+    axis: 'X', 'Y', 'Z', or 'A'
+    step_coarse: coarse step size in mm
+    step_fine: fine step size in mm
+    backoff: distance to back off after coarse trigger (default 2.0 mm)
+    """
+    start_pos = await skr.get_pos()
+    start_pos = await skr.get_pos()#bug I don't understand second call works
+    pos = start_pos[axis]
+    print(f"{axis}_height start {pos:.2f}")
+    if axis is 'X' or axis is 'Y':
+        await skr.set_current_xy(current)
+    elif axis is 'Z':
+        await skr.set_current_z(current)
+    else:
+        raise ValueError("Axis must be 'X', 'Y', or 'Z'")
+    
+    # Coarse approach
+    i=0
+    total_up = 0.0
+    while True:
+        i +=1
+
+        status = await get_axis_status(True,False)  # check endstop status
+        if status.get(f"{axis}_end_stop", True):
+            break
+        if i > 100:  # Safety to prevent infinite loop
+            print("End stop not triggered within expected range.")
+            return None
+        total_up += step_coarse
+        running_total = pos - total_up
+        await skr._device.run([f"G1 {axis}{running_total} F{skr.z_move_speed}"])
+
+    # Back off large hysteresis, so down far, back up to just before the last coarse step
+    backoff = 5
+    await skr._device.run([f"G1 {axis}{running_total+backoff} F{skr.z_move_speed}"])
+    running_total = running_total + step_coarse*1.2
+    await skr._device.run([f"G1 {axis}{running_total} F{skr.z_move_speed}"])
+
+    i=0
+    total_up = 0.0
+    # Fine approach
+    while True:
+        i +=1
+        status = await get_axis_status(True,False)  # check endstop status
+        if status.get(f"{axis}_end_stop", True):
+            break
+        if i > step_coarse*2/step_fine:  # Safety to prevent infinite loop
+            print("End stop not triggered within coasrse range.")
+            return None
+        total_up += step_fine
+        running_total= running_total-total_up
+        await skr._device.run([f"G1 {axis}{running_total} F{skr.z_move_speed}"])        
+    
+    end_height_pos = await skr.get_pos()
+    travel = end_height_pos[axis] - start_pos[axis]
+    print(f"hit at {end_height_pos}, {axis}_up dist {travel:.4f}")
+    return travel
+
+def set_speed(xy, z):
+    skr.xy_move_speed = xy
+    skr.z_move_speed = z
+    
+async def up():
+    await skr._ascend()
+
+async def down(distance_above_plate = 6.5):
+    await skr._descend(distance_above_plate)
+
+async def access_left():
+    await skr.move_to_safe(1, 0, 0, True)
+
+async def access_right():
+    await skr.move_to_safe(0, 0, 0, True)
 
 async def move_sensors_randomly():
     while not close:
@@ -152,44 +265,21 @@ distance_above_plate = 12
 await skr._descend(distance_above_plate)
 
 #%%
-def set_speed(xy, z):
-    skr.xy_move_speed = xy
-    skr.z_move_speed = z
-    
-async def up():
-    await skr._ascend()
-
-async def down(distance_above_plate = 6.5):
-    await skr._descend(distance_above_plate)
-
-async def access_left():
-    await skr.move_to_safe(1, 0, 0, True)
-
-async def access_right():
-    await skr.move_to_safe(0, 0, 0, True)
-
-#%%
 await up()
 await access_left()
 
 #%%
-set_speed(10000,1000)
+set_speed(10000,2000)
 
 #%%
 await skr.check_endstops()
 await skr.check_currents()
 
 #%%
-
-
-#%%
 await skr.check_acceleration()
 
 #%%
-#stall parameters
-set_speed(10000,1000)
-await skr.set_acceleration_z(1000)
-await skr.set_maxfeed(100000,10000)
+await skr._descend(30)
 
 
 #%%
@@ -197,94 +287,40 @@ await down()
 await up()
 
 #%%
-
-async def get_axis_status(endstops=True, currents=True):
-    """
-    Returns a dict with axis currents and endstop status.
-    Keys: 'X_current', 'Y_current', ..., 'X_end_stop', ...
-    Values: float for current, bool for endstop triggered.
-    """
-    status = {}
-    if endstops: await skr.check_endstops()
-    if currents: await skr.check_currents()
-    logs=skr.get_new_logs_since_last()
-
-    # Endstop lines: e.g. 'x_min: TRIGGERED'
-    endstop_pattern = re.compile(r'([xyza])_(min|max):\s*(TRIGGERED|open)', re.IGNORECASE)
-    # Current lines: e.g. 'X driver current: 1500'
-    current_pattern = re.compile(r'([XYZA]|I)\s*driver current:\s*([\d.]+)', re.IGNORECASE)
-
-    for line in logs:
-        # Endstop status
-        match = endstop_pattern.match(line)
-        if match:
-            axis = match.group(1).upper()
-            triggered = match.group(3).lower() == "triggered"
-            status[f"{axis}_end_stop"] = triggered
-            continue
-        # Currents
-        match = current_pattern.match(line)
-        if match:
-            axis = match.group(1).upper()
-            value = float(match.group(2))
-            status[f"{axis}_current"] = value
-            continue
-
-    return status
-
-
 print(await get_axis_status())
 
 #%%
-async def find_endstop_position(axis: str, step_coarse: float, step_fine: float, backoff: float = 2.0):
-    """
-    Moves up in mm along the given axis until end stop is triggered,
-    backs off by 'backoff', then moves up in fine steps until triggered.
-    Returns total distance moved until end stop.
-    axis: 'X', 'Y', 'Z', or 'A'
-    step_coarse: coarse step size in mm
-    step_fine: fine step size in mm
-    backoff: distance to back off after coarse trigger (default 2.0 mm)
-    """
-    start_pos = await skr.get_pos()
-    pos = start_pos[axis]
-    print(pos)
-    await skr._device.run(["M211 S0"])
-    # Coarse approach
-    while True:
-        i +=1
-        await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
-        pos -= step_coarse
-        await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
-        status = await get_axis_status()
-        if status.get(f"{axis}_end_stop", False):
-            break
-        if i > 20:  # Safety to prevent infinite loop
-            print("End stop not triggered within expected range.")
-            break
+data2 = []
+await skr.move_to_rel(0,0,11,[3,-10,0])#z crash zone
+await skr._device.run(["M211 S0"]) # turn off software endstops
+await skr.set_maxfeed(100000,10000)
+await skr.set_acceleration_z(1000)
+set_speed(10000,500)
+for i in range(10):
+    await skr.set_current_z(153) #152 stalled, 153 hit.
+    await down(6)
+    distance = await find_endstop_position('Z', 1000, 1, 0.025)
+    print(f"Distance until end stop: {distance} mm")
+    data2.append(distance)
+    await skr.home_head()
 
-    # Back off
-    pos += backoff
-    await skr._device.run([f'G1 {axis}{pos} F{skr.z_move_speed}'])
-
-    # Fine approach
-    while True:
-        await skr._device.run([f'G1 {axis}{pos + step_fine} F{skr.z_move_speed}'])
-        i+=1
-        pos -= step_fine
-        await skr.check_endstops()
-        status = await get_axis_status()
-        if status.get(f"{axis}_end_stop", False):
-            break
-        if i > backoff/step_fine+1:  # Safety to prevent infinite loop
-            print("End stop not triggered within backoff range.")
-            break
-
-    return pos
+print(data2)
 
 #%%
-distance = await find_endstop_position('Z', 2.0, 0.1)
-print(f"Distance until end stop: {distance} mm")
+await skr.get_pos()
+
+#%%
+await skr.set_current_z(153)
+await down(6)
+await skr.get_pos()
+
+
+
+#%%
+await skr.set_current_z(550)
+await skr.home_head()
+#%%
+await skr.move_rel_z(-5)
 
 #%%
 await skr.get_pos()
@@ -296,16 +332,35 @@ await skr.set_current_z(250)
 await skr.move_to_safe(0, 0, 1, False) #jaws closed
 
 #%%
-await skr.move_to_rel(0,0,0,[3,-10,0])
+data2 = []
+await skr.move_to_rel(0,0,0,[-2,3,0])#z crash zone
+await skr._device.run(["M211 S0"]) # turn off software endstops
+await skr.set_maxfeed(100000,10000)
+await skr.set_acceleration_xy(1000)
+set_speed(10000,500)
+await down(7)
+
+#%%
+for i in range(1):
+    await skr.set_current_xy(300) #152 stalled, 153 hit.
+    await down(6)
+    distance = await find_endstop_position('X', 1000, 1, 0.025)
+    print(f"Distance until end stop: {distance} mm")
+    data2.append(distance)
+    await skr.home_head()
+
+print(data2)
+
+#%%
+await skr.homezxy()
 
 #%% 
 await down(15)
 #%%
 await skr.set_current_z(153) #152 stalled, 153 hit.
-await down(8)
+await down(6)
 await skr.set_current_z(500)
 #%%
-await up()
 await skr.home_head()
 
 # %%

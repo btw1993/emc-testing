@@ -59,25 +59,36 @@ class SKR_MINI:
         await self._device.run(cmds)
         return x, y
     
-    async def get_pos(self):
+    async def is_marlin_busy(self):
+        logs = self.get_new_logs_since_last()
+        for line in logs:
+            if "busy: processing" in line:
+                return True
+        return False
+
+    async def get_pos(self, timeout: float = 2.0, poll_interval: float = 0.025) -> dict:
         """
         Queries Marlin for the current position using M114 and parses the response.
+        Waits up to 'timeout' seconds, polling every 'poll_interval' seconds.
         Returns a dict: {'X': float, 'Y': float, 'Z': float, 'A': float}
         """
         await self._device.run(['M114'])
-        await sleep(0.1)  # Give Marlin time to respond
-        logs = self.get_new_logs_since_last()
+        elapsed = 0
         pos_pattern = re.compile(r'X:([\d\.\-]+)\s+Y:([\d\.\-]+)\s+Z:([\d\.\-]+)\s+A:([\d\.\-]+)', re.IGNORECASE)
-        for line in logs:
-            match = pos_pattern.search(line)
-            if match:
-                return {
-                    'X': float(match.group(1)),
-                    'Y': float(match.group(2)),
-                    'Z': float(match.group(3)),
-                    'A': float(match.group(4))
-                }
-        raise ValueError("Position not found in logs")
+        while elapsed < timeout:
+            await sleep(poll_interval)
+            logs = self.get_new_logs_since_last()
+            for line in logs:
+                match = pos_pattern.search(line)
+                if match:
+                    return {
+                        'X': float(match.group(1)),
+                        'Y': float(match.group(2)),
+                        'Z': float(match.group(3)),
+                        'A': float(match.group(4))
+                    }
+            elapsed += poll_interval
+        raise TimeoutError("Position not found in logs after M114")
 
     async def move_to_rel(self, plate: int, column: int, row: int, offsetxy:list):
         x = self.sensor_1_pickup_position["x"]
@@ -92,6 +103,10 @@ class SKR_MINI:
         # if self._device.
         await self._device.run(cmds)
         return x, y
+    
+    async def move_rel_z(self, up): #positive up, negative down, default for amperia is opposite
+        start_pos = await self.get_pos()
+        await self._device.run([f"G1 Z{start_pos['Z']-up} F{self.z_move_speed}"])
     
     async def move_to_safe(self, plate: int, column: int, row: int, offset: bool = True):
         await self._ascend()
@@ -171,13 +186,13 @@ class SKR_MINI:
         cmds = [f"M204 P{acc} R{acc} T{acc}"]
         await self._device.run(cmds)
 
-    async def set_acceleration_z(self, acc):       
+    async def set_acceleration_z(self, acc:int):       
         cmds = [f"M201 Z{int(acc*1.1)}"]
         await self._device.run(cmds)
         cmds = [f"M204 P{acc} R{acc} T{acc}"]
         await self._device.run(cmds)
 
-    async def set_maxfeed(self, feedxy, feedz):       
+    async def set_maxfeed(self, feedxy:int, feedz:int):       
         cmds = [f"M203 X{int(feedxy)} Y{int(feedxy)} Z{int(feedz)}"]
         await self._device.run(cmds)
     
@@ -218,4 +233,5 @@ class SKR_MINI:
 
     async def disconnect(self):
         await self._device.close()
+
 
