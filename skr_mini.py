@@ -72,6 +72,8 @@ class SKR_MINI:
         Waits up to 'timeout' seconds, polling every 'poll_interval' seconds.
         Returns a dict: {'X': float, 'Y': float, 'Z': float, 'A': float}
         """
+        # Flush stale log entries so we parse the response to this M114
+        self.get_new_logs_since_last()
         await self._device.run(['M114'])
         elapsed = 0
         pos_pattern = re.compile(r'X:([\d\.\-]+)\s+Y:([\d\.\-]+)\s+Z:([\d\.\-]+)\s+A:([\d\.\-]+)', re.IGNORECASE)
@@ -115,6 +117,13 @@ class SKR_MINI:
 
     async def open_jaw(self):
         await self._device.run([f'G1 A{self.opening_distance}'])
+    
+    async def Stealth_chop(self, enable: bool):
+        if enable:
+            await self._device.run([f'M569 S0'])
+        else:
+            await self._device.run([f'M569 S1'])
+        
 
     async def _release_sensor(self, y: float):
         await self._device.run([f'G1 A{self.opening_distance} Y{y + self.opening_offset}'])
@@ -202,6 +211,14 @@ class SKR_MINI:
 
     async def homezxy(self):
         cmds = ["G28 Z", "G28 X", "G28 Y"]
+        await self._device.run(cmds)
+
+    async def homex(self):
+        cmds = ["G28 X"]
+        await self._device.run(cmds)
+
+    async def homey(self):
+        cmds = ["G28 Y"]
         await self._device.run(cmds)
 
     async def home_head(self):
