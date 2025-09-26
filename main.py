@@ -344,23 +344,30 @@ right_a12 = [107,129.2,22.8]
 skr.sensor_1_pickup_position = {"x": left_a1[0], "y": left_a1[1], "z": left_a1[2]}
 
 #%%
-Flex_map = {"X": 0.5, "Y": 0.5, "Z": 0.5}  # mm of flex on stall
+Flex_map = {"X": 0.3, "Y": 0.6, "Z": 0.3}  # mm of flex on stall
 Z_stall_height_to_rack_pick_up_height = 10.4  # mm
+max_bed_y = 133
 
-def pickup_postion_from_stall_co_ords(stall_coords_dict:dict):
+#%%
+def pickup_postion_from_stall_co_ords(stall_coords_dict:dict, Flex_map=Flex_map, Z_stall_height_to_rack_pick_up_height=Z_stall_height_to_rack_pick_up_height, max_bed_y=max_bed_y) -> dict:
     """
     Given a dict with 'X', 'Y', 'Z' keys for stall coordinates,
     returns a dict with 'x', 'y', 'z' keys for pickup position.
     """
     pickup_position = {}
+    stall_coords__mean_dict = {k: sum(v)/len(v) for k, v in stall_coords_dict.items()}
     for axis in ['X', 'Y', 'Z']:
-        if axis in stall_coords_dict:
+        if axis in stall_coords__mean_dict:
             if axis == 'Z':
-                pickup_position[axis.lower()] = stall_coords_dict[axis] - Flex_map[axis] + Z_stall_height_to_rack_pick_up_height
-            pickup_position[axis.lower()] = stall_coords_dict[axis] + Flex_map[axis]
+                print("Z", stall_coords__mean_dict[axis], Flex_map[axis], Z_stall_height_to_rack_pick_up_height)
+                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis] + Z_stall_height_to_rack_pick_up_height
+            elif axis =='Y':
+                print("Y")
+                pickup_position[axis.lower()] = max_bed_y + (stall_coords__mean_dict[axis] + Flex_map[axis])
+            else:
+                print("X")
+                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis]
     # Adjust Z for rack pickup height
-    if 'z' in pickup_position:
-        pickup_position['z'] += Z_stall_height_to_rack_pick_up_height
     return pickup_position
 
 # %%
@@ -370,6 +377,10 @@ await skr.home()
 #%%
 await up()
 await access_left()
+
+#%%
+await up()
+await access_right()
 
 #%%
 set_speed(10000,2000)
@@ -518,9 +529,11 @@ async def measure_co_ords(plate, column, row, offset, clearance, axes=["X", "Y",
     return data
 '''
 #%% front A1
-await measure_co_ords(1,0,0, [104,94,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=3)
+pos_right_A1 = await measure_co_ords(1,0,0, [104,94,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=5)
+PosrA1 = pickup_postion_from_stall_co_ords(pos_right_A1)
 #%%
-await measure_co_ords(1,0,11, [104,1,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=3)
+pos_right_A12 = await measure_co_ords(1,0,11, [104,1,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=5)
+PosrA12 = pickup_postion_from_stall_co_ords(pos_right_A12)
 #%%
 data_y = []
 for i in range(20):
