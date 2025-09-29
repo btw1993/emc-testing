@@ -8,7 +8,7 @@ class SKR_MINI:
     row_spacing = 9
     #row_spacing = 18
     plate_spacing = 105.5
-    sensor_1_pickup_position = {"x": -1.8, "y": 1.2, "z": 20}
+    sensor_1_pickup_position:dict[str, float] = {"x": -1.8, "y": 1.2, "z": 20}
     sensor_1_location = {"plate": 0, "column": 0, "row": 0}
     xy_move_speed = 7000
     z_move_speed = 500
@@ -29,10 +29,10 @@ class SKR_MINI:
     async def connect(self):
         await self._device.connect()
 
-    def logs_list_all(self):
+    def logs_list_all(self)->list[str]:
         return self._device.logs_list
     
-    def get_new_logs_since_last(self):
+    def get_new_logs_since_last(self)->list[str]:
         """
         Returns logs added since the last call to this function.
         """
@@ -65,8 +65,11 @@ class SKR_MINI:
             if "busy: processing" in line:
                 return True
         return False
+    
+    async def run_gcode(self, gcode: list[str]):
+        await self._device.run(gcode)
 
-    async def get_pos(self, timeout: float = 2.0, poll_interval: float = 0.025) -> dict:
+    async def get_pos(self, timeout: float = 2.0, poll_interval: float = 0.025) -> dict[str, float]:
         """
         Queries Marlin for the current position using M114 and parses the response.
         Waits up to 'timeout' seconds, polling every 'poll_interval' seconds.
@@ -92,7 +95,7 @@ class SKR_MINI:
             elapsed += poll_interval
         raise TimeoutError("Position not found in logs after M114")
 
-    async def move_to_rel(self, plate: int, column: int, row: int, offsetxy:list):
+    async def move_to_rel(self, plate: int, column: int, row: int, offsetxy:list[float]):
         x = self.sensor_1_pickup_position["x"]
         x += self.plate_spacing * (plate - self.sensor_1_location["plate"])
         x += self.column_spacing * (column - self.sensor_1_location["column"])
@@ -106,7 +109,7 @@ class SKR_MINI:
         await self._device.run(cmds)
         return x, y
     
-    async def move_rel_z(self, up): #positive up, negative down, default for amperia is opposite
+    async def move_rel_z(self, up:float): #positive up, negative down, default for amperia is opposite
         start_pos = await self.get_pos()
         await self._device.run([f"G1 Z{start_pos['Z']-up} F{self.z_move_speed}"])
     
@@ -189,7 +192,7 @@ class SKR_MINI:
         cmds = ["M503"]
         await self._device.run(cmds)
 
-    async def set_acceleration_xy(self, acc):       
+    async def set_acceleration_xy(self, acc:int):       
         cmds = [f"M201 X{int(acc*1.1)} Y{int(acc*1.1)}"]
         await self._device.run(cmds)
         cmds = [f"M204 P{acc} R{acc} T{acc}"]

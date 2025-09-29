@@ -20,7 +20,7 @@ class Device:
     _buffer_size: int
     _timeout: float
     _baudrate: int
-    logs_list = []
+    logs_list:list[str] = []
 
     def __init__(self, pid: str = "0483", baudrate: int = 115200, timeout: float = 0.5):
         self._buffer_size = 1

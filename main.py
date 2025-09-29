@@ -1,12 +1,11 @@
 # %%
-from asyncio import run, create_task, StreamReader, get_event_loop, StreamReaderProtocol, sleep
+from asyncio import create_task, StreamReader, get_event_loop, StreamReaderProtocol
 from random import randrange
 import sys
 import logging
 from skr_mini import SKR_MINI
 from agitators import Agitators
 from pico import Picos
-import time
 import re
 import csv
 import os
@@ -26,20 +25,6 @@ async def main():
 
     await skr.home()
 
-    # Move the head to the X & Y location of a sensor (plate, column, row)
-    # await skr.move_to(0, 0, 0, True)
-
-    # Move to, grab and raise a sensor from the rack
-    # await skr.collect_sensor(0, 0, 0)
-
-    # Return a sensor to the rack
-    # await skr.dropoff_sensor(0, 0, 0)
-
-    # Open the head's jaws
-    # await skr.open_jaw()
-
-    # move sensors about randomly
-    # Make sure to set the starting "positions" below (Line 43)
     #await move_sensors_randomly()
 
     # print(await picos.check_connections())
@@ -49,10 +34,9 @@ async def main():
 
 # init 2x3x12 array to represent the positions a sensor can be in the well plate
 positions = [[[False]*12 for _i in range(3)], [[False]*12 for _i in range(3)]]
-
 positions[0][0][0] = True
 
-def save_data_csv(data_dict, label, axes=('X', 'Y', 'Z')):
+def save_data_csv(data_dict:dict[str,list[float]], label:str, axes:tuple[str, str, str]=('X', 'Y', 'Z')):
     """
     Save a dict of lists (e.g. {'X': [...], 'Y': [...], 'Z': [...]}) as a CSV with axis columns.
     Each row contains the i-th value from each axis list.
@@ -75,9 +59,7 @@ def pick_random_position():
     col = randrange(2)
     # row = randrange(12)
     row = randrange(6)
-
     return plate, col, row
-
 
 def pick_random_sensor():
     position: tuple[int, int, int]
@@ -88,7 +70,6 @@ def pick_random_sensor():
             break
     return position
 
-
 def pick_random_destination():
     position: tuple[int, int, int]
     while True:
@@ -97,7 +78,6 @@ def pick_random_destination():
         if not positions[plate][col][row]:
             break
     return position
-
 
 async def cancel_on_enter_keypress():
     global close
@@ -111,16 +91,16 @@ async def cancel_on_enter_keypress():
         close = True
         await skr.disconnect()
 
-async def get_axis_status(endstops=True, currents=True):
+async def get_axis_status(endstops:bool=True, currents:bool=True)-> dict[str, float|bool]:
     """
     Returns a dict with axis currents and endstop status.
     Keys: 'X_current', 'Y_current', ..., 'X_end_stop', ...
     Values: float for current, bool for endstop triggered.
     """
-    status = {}
+    status:dict[str, float|bool] = {}
     if endstops: await skr.check_endstops()
     if currents: await skr.check_currents()
-    logs=skr.get_new_logs_since_last()
+    logs:list[str] = skr.get_new_logs_since_last()
     # Endstop lines: e.g. 'x_min: TRIGGERED'
     endstop_pattern = re.compile(r'([xyza])_(min|max):\s*(TRIGGERED|open)', re.IGNORECASE)
     # Current lines: e.g. 'X driver current: 1500'
@@ -144,8 +124,7 @@ async def get_axis_status(endstops=True, currents=True):
 
     return status
 
-
-async def find_endstop_position(axis: str, current:int, step_coarse: float, step_fine: float, offset:float=0.0):
+async def find_endstop_position(axis: str, current:int, step_coarse: float, step_fine: float, offset:float=0.0)-> float|None:
     """
     Moves up in mm along the given axis until end stop is triggered,
     backs off by 'backoff', then moves up in fine steps until triggered.
@@ -179,7 +158,7 @@ async def find_endstop_position(axis: str, current:int, step_coarse: float, step
         await skr.homex()
 
     if offset != 0:
-        await skr._device.run([f"G1 {axis}{pos+dir*offset} F{speed}"])
+        await skr.run_gcode([f"G1 {axis}{pos+dir*offset} F{speed}"])
 
     while True:
         i +=1
@@ -193,15 +172,15 @@ async def find_endstop_position(axis: str, current:int, step_coarse: float, step
         total_up += step_coarse
         running_total = pos + dir*(total_up+offset)
         print(f"moving to {running_total}")
-        await skr._device.run([f"G1 {axis}{running_total} F{speed}"])
+        await skr.run_gcode([f"G1 {axis}{running_total} F{speed}"])
 
     # Back off large hysteresis, so down far, back up to just before the last coarse step
     backoff = 5
-    await skr._device.run([f"G1 {axis}{running_total- dir*backoff} F{speed}"])
+    await skr.run_gcode([f"G1 {axis}{running_total- dir*backoff} F{speed}"])
     print(f"backing off to {running_total - dir*backoff}")
     running_total = running_total - dir*step_coarse*1.1
     print(f"return to {running_total}")
-    await skr._device.run([f"G1 {axis}{running_total} F{speed}"])
+    await skr.run_gcode([f"G1 {axis}{running_total} F{speed}"])
 
     i=0
     # Fine approach
@@ -215,23 +194,26 @@ async def find_endstop_position(axis: str, current:int, step_coarse: float, step
             return None
         running_total= running_total + dir*step_fine
         print(f"moving to {running_total}, step fine {step_fine}")
-        await skr._device.run([f"G1 {axis}{running_total} F{speed}"])        
+        await skr.run_gcode([f"G1 {axis}{running_total} F{speed}"])        
     
     travel = start_pos[axis]-running_total
     print("distance moved: ",start_pos[axis]-running_total)
     return travel
 
-async def measure_co_ords(plate, column, row, offset, clearance, axes=["X", "Y", "Z"], repeats=3):
+#%%
+async def measure_co_ords(plate:int, column:int, row:int, 
+                          offset:list[float], clearance:list[float], axes:list[str]=["X", "Y", "Z"], 
+                          repeats:int=3, prefix:str ="")-> dict[str, list[float]]:
     """
     Measures distance to endstops for each axis at a given location.
     offset: list or dict of offsets for each axis.
     clearance: list or dict of clearances for each axis.
     Returns a dict of lists: {axis: [distance1, distance2, ...]}
     """
-    data = {}
+    distances_data:dict[str, list[float]] = {}
     direction_map = {'X': [-1, 1], 'Y': [1, -1], 'Z': [-1, 1]}
     current_map = {'X': 125, 'Y': 125, 'Z': 160}
-    await skr._device.run(["M211 S0"])
+    await skr.run_gcode(["M211 S0"])
     await skr.set_maxfeed(100000, 10000)
     await skr.set_acceleration_xy(20000)
     await skr.set_acceleration_z(1000)
@@ -240,12 +222,11 @@ async def measure_co_ords(plate, column, row, offset, clearance, axes=["X", "Y",
 
     for axis in axes:
         print (axis)
-        data_axis = []
+        data_axis:list[float] = []
         direction = direction_map[axis]
         current = current_map[axis]
-        axis_offset = offset[axes.index(axis)] if isinstance(offset, (list, tuple)) else offset.get(axis, 0)
-        axis_clearance = clearance[axes.index(axis)] if isinstance(clearance, (list, tuple)) else clearance.get(axis, 0)
-
+        axis_offset = offset[axes.index(axis)] 
+        axis_clearance = clearance[axes.index(axis)] 
         for i in range(repeats):
             print(repeats, axis, i)
             await skr.set_current_xy(500)
@@ -267,24 +248,73 @@ async def measure_co_ords(plate, column, row, offset, clearance, axes=["X", "Y",
             else:
                 await down(6.5)
             print("about to measure distance")
-            distance = await find_endstop_position(axis, 1000, 0.4, 0.05, axis_offset)
-            print(f"Distance until {axis} end stop: {distance} mm")
-            data_axis.append(distance)
+            distance:float|None = await find_endstop_position(axis, 1000, 0.4, 0.05, axis_offset)
+            if distance is not None:
+                print(f"Distance until {axis} end stop: {distance} mm")
+                data_axis.append(distance)
+            else:
+                print(f"Failed to find endstop for axis {axis}")
+                data_axis.append(float('nan'))
+            
+        distances_data[axis] = data_axis
 
-        data[axis] = data_axis
+    print(distances_data)
+    save_data_csv(distances_data, f"{prefix}data_{plate},{column},{row}")
+    return distances_data
 
-    print(data)
-    save_data_csv(data, f"data_{plate},{column},{row}")
-    return data
+def pickup_postion_from_stall_co_ords(stall_coords_dict:dict[str, float], Flex_map:dict[str, float]={"X": 0.3, "Y": 0.6, "Z": 0.3}, 
+                                      Z_stall_height_to_rack_pick_up_height:float=10.4, max_bed_y:float=133) -> dict[str, float]:
+    """
+    Given a dict with 'X', 'Y', 'Z' keys for stall coordinates,
+    returns a dict with 'x', 'y', 'z' keys for pickup position.
+    """
+    pickup_position:dict[str, float] = {}
+    stall_coords__mean_dict:dict[str, float] = {k: sum(v)/len(v) for k, v in stall_coords_dict.items()}
+    for axis in ['X', 'Y', 'Z']:
+        if axis in stall_coords__mean_dict:
+            if axis == 'Z':
+                #print("Z", stall_coords__mean_dict[axis], Flex_map[axis], Z_stall_height_to_rack_pick_up_height)
+                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis] + Z_stall_height_to_rack_pick_up_height
+            elif axis =='Y':
+                #print("Y")
+                pickup_position[axis.lower()] = max_bed_y + (stall_coords__mean_dict[axis] + Flex_map[axis])
+            else:
+                #print("X")
+                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis]
+    # Adjust Z for rack pickup height
+    print("pickup position =",pickup_position)
+    return pickup_position
 
-def set_speed(xy, z):
+#%%
+def load_csv_as_dict(filename:str, folder:str="DATA")-> dict[str, list[float]] :
+    """
+    Load a CSV file into a dictionary where each column is a key 
+    and its values are stored in a list.
+    """
+    filepath = os.path.join(folder, filename)
+    data_dict:dict[str, list[float]] = {}
+
+    with open(filepath, newline='', encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            for key, value in row.items():
+                data_dict.setdefault(key, []).append(float(value))
+
+    return data_dict
+
+async def move_safe_dict(location_dict:dict[str, float]):
+    await up()
+    await skr.run_gcode([f"G1 X{location_dict['x']} Y{location_dict['y']} F{skr.xy_move_speed}"])
+    await skr.run_gcode([f"G1 Z{location_dict['z']} F{skr.z_move_speed}"])
+
+def set_speed(xy:int, z:int):
     skr.xy_move_speed = xy
     skr.z_move_speed = z
     
 async def up():
     await skr._ascend()
 
-async def down(distance_above_plate = 6.5):
+async def down(distance_above_plate: float = 6.5):
     await skr._descend(distance_above_plate)
 
 async def access_left():
@@ -349,27 +379,6 @@ Z_stall_height_to_rack_pick_up_height = 10.4  # mm
 max_bed_y = 133
 
 #%%
-def pickup_postion_from_stall_co_ords(stall_coords_dict:dict, Flex_map=Flex_map, Z_stall_height_to_rack_pick_up_height=Z_stall_height_to_rack_pick_up_height, max_bed_y=max_bed_y) -> dict:
-    """
-    Given a dict with 'X', 'Y', 'Z' keys for stall coordinates,
-    returns a dict with 'x', 'y', 'z' keys for pickup position.
-    """
-    pickup_position = {}
-    stall_coords__mean_dict = {k: sum(v)/len(v) for k, v in stall_coords_dict.items()}
-    for axis in ['X', 'Y', 'Z']:
-        if axis in stall_coords__mean_dict:
-            if axis == 'Z':
-                print("Z", stall_coords__mean_dict[axis], Flex_map[axis], Z_stall_height_to_rack_pick_up_height)
-                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis] + Z_stall_height_to_rack_pick_up_height
-            elif axis =='Y':
-                print("Y")
-                pickup_position[axis.lower()] = max_bed_y + (stall_coords__mean_dict[axis] + Flex_map[axis])
-            else:
-                print("X")
-                pickup_position[axis.lower()] = stall_coords__mean_dict[axis] - Flex_map[axis]
-    # Adjust Z for rack pickup height
-    return pickup_position
-
 # %%
 await skr.connect()
 # %%
@@ -381,6 +390,49 @@ await access_left()
 #%%
 await up()
 await access_right()
+
+#%%
+Plate_prefix:list[str] = ["black_plate","grey_plate", ]  #naming data files left pos 1 and right pos 2
+
+pos_left_A12 = await measure_co_ords(0,0,11, [1,1,10], 
+                                     [2.2,2.2,2.2], axes=["X", "Y", "Z"], 
+                                     repeats=3, 
+                                     prefix=Plate_prefix[0])
+
+pos_left_A1 = await measure_co_ords(0,0,0, [1,94,10], 
+                                    [2.2,2.2,2.2], axes=["X", "Y", "Z"], 
+                                    repeats=3,
+                                    prefix=Plate_prefix[0])
+
+pos_right_A1 = await measure_co_ords(1,0,0, [104,94,10], [2.2,2.2,2.2], 
+                                     axes=["X", "Y", "Z"], repeats=3, 
+                                     prefix=Plate_prefix[1])
+
+pos_right_A12 = await measure_co_ords(1,0,11, [104,1,10], [2.2,2.2,2.2], 
+                                      axes=["X", "Y", "Z"], repeats=3,
+                                      prefix=Plate_prefix[1])
+#%% get data back
+pos_left_A1 = load_csv_as_dict("Black_platedata_0,0,0_20250926_123938.csv")
+pos_right_A1 = load_csv_as_dict("data_1,0,0_20250926_121310.csv")
+pos_left_A12 = load_csv_as_dict("Black_platedata_0,0,11_20250926_123022.csv")
+pos_right_A12 = load_csv_as_dict("data_1,0,11_20250926_122126.csv")
+
+#%%
+PosrA12 = pickup_postion_from_stall_co_ords(pos_right_A12)
+PosrA1 = pickup_postion_from_stall_co_ords(pos_right_A1)
+PoslA1 = pickup_postion_from_stall_co_ords(pos_left_A1)
+PoslA12 = pickup_postion_from_stall_co_ords(pos_left_A12)
+print(PosrA1)
+print(PoslA1)
+print(PosrA12)
+print(PoslA12)
+
+#%%
+skr.sensor_1_pickup_position = PoslA1
+
+#%%
+await skr.open_jaw()
+await move_safe_dict(PoslA1)
 
 #%%
 set_speed(10000,2000)
@@ -409,29 +461,8 @@ await find_endstop_position('X', 1000, 1, 0.025)
 await skr.home()
 
 #%%
-await skr.move_to_rel(0,0,10,[0,0,0])#z crash zone
-#%%
-data_z = []
-await skr.move_to_rel(1,0,11,[3,-10,0])#z crash zone
-await skr._device.run(["M211 S0"]) # turn off software endstops
-await skr.set_maxfeed(100000,10000)
-await skr.set_acceleration_z(1000)
-set_speed(10000,500)
-
-for i in range(20):
-    await skr.set_current_z(153) #152 stalled, 153 hit.
-    await down(6)
-    distance = await find_endstop_position('Z', 1000, 1, 0.025)
-    print(f"Distance until end stop: {distance} mm")
-    data_z.append(distance)
-    await skr.home_head()
-
-print(data_z)
-save_data_csv(data_z, "data_z")
-
-#%%
 #stall xy parameters
-await skr._device.run(["M211 S0"]) # turn off software endstops
+await skr.run_gcode(["M211 S0"]) # turn off software endstops
 await skr.set_maxfeed(100000,10000)
 await skr.set_acceleration_xy(20000)
 set_speed(3000,500)
@@ -445,157 +476,6 @@ await skr.move_to_rel(1,0,4,[-10,5])
 
 for i in range(30):
     await skr.move_to_rel(1,0,4,[-10+i*0.5,-5])
-
-#%%
-axis = 'Y'
-data  =[]
-direction = [1,1]
-clearance = [2,2]
-offset = 90
-await skr._device.run(["M211 S0"]) # turn off software endstops
-await skr.set_maxfeed(100000,10000)
-await skr.set_acceleration_xy(10000)
-await skr.set_acceleration_z(1000)
-set_speed(3000,500)
-
-if axis == 'Y':
-    direction = [1,-1]
-if axis == 'X':
-    direction = [-1,1]
-if axis == 'Z':
-    direction = [-1,1]
-
-for i in range(3):
-    await skr.set_current_xy(500) #152 stalled, 153 hit.
-    await skr.homezxy()
-    await up() #up to avoid crashes
-    await skr.move_to_rel(1,0,0,[-clearance[0],clearance[1]])
-    await down(6) #down to avoid
-    await skr.set_current_xy(150) #drop current for crashing
-    await skr.move_to_rel(1,0,0,[-clearance[0]*direction[0],clearance[1]*direction[1]])
-    await skr.set_current_z(500)
-    await up() #up to avoid crashes
-    distance = await find_endstop_position(axis, 1000, 0.4, 0.05,offset)
-    print(f"Distance until {axis} end stop: {distance} mm")
-    data.append(distance)
-
-print(data)
-save_data_csv(data, f"data_{axis}")
-
-#%%
-
-
-#%%
-'''
-
-async def measure_co_ords(plate, column, row, offset, clearance, axes=["X", "Y", "Z"], repeats=1):
-    data  = {}
-    direction = [1,1]
-    
-    for axis in axes:
-        data_axis = []
-        if axis == 'Y':
-            direction = [1,-1]
-            offset = offset[1]
-        if axis == 'X':
-            direction = [-1,1]
-            offset = offset[0]
-        if axis == 'Z':
-            direction = [-1,1]
-            offset = offset[2]
-
-        for i in range(repeats):
-            await skr.set_current_xy(500) #152 stalled, 153 hit.
-            await skr.homezxy()
-            await skr._device.run(["M211 S0"]) # turn off software endstops
-            await skr.set_maxfeed(100000,10000)
-            await skr.set_acceleration_xy(10000)
-            set_speed(3000,500)
-            await up() #up to avoid crashes
-            await skr.move_to_rel(plate,column,row,[-clearance[0],clearance[1]])
-            await down(6) #down to avoid
-            await skr.set_current_xy(150) #drop current for crashing
-            await skr.move_to_rel(plate,column,row,[-clearance[0]*direction[0],clearance[1]*direction[1]])
-            await skr.set_current_z(500)
-            await up() #up to avoid crashes
-            distance = await find_endstop_position(axis, 1000, 0.4, 0.05,offset)
-            print(f"Distance until {axis} end stop: {distance} mm")
-            data_axis.append(distance)
-
-        data[axis]= data_axis
-
-    print(data)
-    save_data_csv(data, f"data_{plate},{column},{row}_{axis}")
-    return data
-'''
-#%% front A1
-pos_right_A1 = await measure_co_ords(1,0,0, [104,94,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=5)
-PosrA1 = pickup_postion_from_stall_co_ords(pos_right_A1)
-#%%
-pos_right_A12 = await measure_co_ords(1,0,11, [104,1,10], [2.2,2.2,2.2], axes=["X", "Y", "Z"], repeats=5)
-PosrA12 = pickup_postion_from_stall_co_ords(pos_right_A12)
-#%%
-data_y = []
-for i in range(20):
-    await skr.set_current_xy(500) #152 stalled, 153 hit.
-    await up() #up to avoid crashes
-    await skr.move_to_rel(1,0,0,[-2,-1])
-    await down(6) #down to avoid
-    await skr.set_current_xy(150) #drop current for crashing
-    await skr.move_to_rel(1,0,0,[4,-1])
-    await skr.set_current_z(500)
-    await up()
-    
-    await skr.move_to_safe(1, 0, 0, False) #jaws closed
-    await skr.move_to_rel(1,0,1,[-3,0,0]) #start behind row
-    await down(6)
-    await skr.set_current_xy(125) #152 stalled, 153 hit.
-    await skr.move_to_rel(1,0,0,[-3,-4,0])
-    distance = await find_endstop_position('Y', 1000, 1, 0.05,90)
-    print(f"Distance until end stop: {distance} mm")
-    data_y.append(distance)
-    await skr.homex()
-    await skr.homey()
-
-print(data_y)
-save_data_csv(data_y, "data_y")
-#%%
-data_y12 = []
-#%%
-for i in range(20):
-    await skr.move_to_rel(1,0,11,[-3,3,0]) #start behind row
-    await down(6)
-    await skr.set_current_xy(125) #152 stalled, 153 hit.
-    await skr.move_to_rel(1,0,11,[-3,-4,0])
-    distance = await find_endstop_position('Y', 1000, 1, 0.05)
-    print(f"Distance until end stop: {distance} mm")
-    data_y12.append(distance)
-    await skr.homex()
-    await skr.homey()
-
-print(data_y12)
-save_data_csv(data_y12, "data_y12")
-#%%
-await skr.move_to_rel(1,0,5,[-3,-1,0])
-#%%
-await skr.set_current_xy(150)
-await skr.move_to_safe(0, 0, 1, False) #jaws closed
-
-#%%
-await skr.homey()
-
-#%%
-await skr.set_current_xy(300)
-await skr.home()
-
-#%% 
-await down(10)
-#%%
-await skr.set_current_z(153) #152 stalled, 153 hit.
-await down(6)
-await skr.set_current_z(500)
-#%%
-await skr.home_head()
 
 # %%
 await agitators.connect()
@@ -618,49 +498,20 @@ await agitators.stop()
 
 #%% for calibration change first position, but afterwards push this into skr_mini
 skr.sensor_1_pickup_position = {"x": left_a1[0], "y": left_a1[1], "z": left_a1[2]}
-active_plate = p['left']
+active_plate = p['right']
 #skr.opening_offset = -2.5-0.625
 
 #%%
 pos_index = 13 -1
 
-#%%
-holes = 6 #left and right
-z_hieght_piercing = 3.5 #distance above rack
-
 #%% pokey pokey, can move to definition once tested
 await skr.home()
-await skr.collect_sensor(active_plate, c['left'], 0)
+#%%
+await skr.collect_sensor(0, c['left'], 0)
 
-for hole in range(holes):
-    x, y = await skr.move_to_safe(active_plate, pos_index % 2, (pos_index/2)//1, False) #front left plate 0 or 1, zigzag pattern
-    print(x, y)
-    old_z_speed = skr.z_move_speed
-    skr.z_move_speed = 500
-    await skr._descend(z_offset=z_hieght_piercing) #offset above rack
-    x_coord = x- 1 #push flap
-    y_coord = y
-    cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
-    await skr._device.run(cmds)
-    await skr.move_to(active_plate, pos_index % 2, (pos_index/2)//1, False)
-    skr.z_move_speed = old_z_speed
-    #time.sleep(1) # let hole be cut
-    if False:
-        shape = [1,0,-1,0] #x coord is index and y coord is +1 on index, so length of list is number of positions
-        width = 1 #width of shape in mm modifies shape to real units
-        for pos in range(len(shape)*2):
-            x_coord = x + shape[pos%len(shape)]*width/2 #mod cycles through shape so that don't run off index
-            y_coord = y + shape[(pos+1)%len(shape)]*width/2 #mod cycles through shape so that don't run off index
-            cmds = [f'G1 X{x_coord} Y{y_coord} F{skr.xy_move_speed}']
-            await skr._device.run(cmds)
-            #time.sleep(1) # let agitation to open hole
+await skr.dropoff_sensor(0, c['left'], 0)
 
-        await skr.move_to_safe(active_plate, pos_index % 2, (pos_index/2)//1, False) #return to centre before ascent
-
-    await skr._ascend() # to avoid crashing when moving
-    pos_index += 1 # go to next position
-
-await skr.dropoff_sensor(active_plate, c['left'], 0)
+#%%
 await skr.move_to_safe((active_plate+1)%2, 0, 11) #move to non active plate back left
 
 # %% hold sensor in hole
